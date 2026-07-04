@@ -24,6 +24,8 @@
 #include <string.h>
 #include <stdexcept>
 
+
+
 using namespace std;
 
 #define CHECKARG(opt,n) if(a>=argc-1) {::printf(opt " missing argument #%d\n",n);exit(0);} else {a++;}
@@ -61,6 +63,8 @@ void printUsage() {
   printf(" -o fileName: output result to fileName\n");
   printf(" -l: List cuda enabled devices\n");
   printf(" -check: Check GPU kernel vs CPU\n");
+  printf(" --tame <file>: Generate tame DPs only and save periodically to <file>\n");
+  printf(" --wilds offsetBits,stepBits: Generate wild DPs only, with step = 2^stepBits\n");
   printf(" inFile: intput configuration file\n");
   exit(0);
 
@@ -163,6 +167,14 @@ static bool serverMode = false;
 static string serverIP = "";
 static string outputFile = "";
 static bool splitWorkFile = false;
+
+static bool generateTameMode = false;
+static string generateTameFile = "";
+
+int wildsStepBits = 0;
+static bool wildsOnlyMode = false;
+static int wildsOffsetBits = 0;
+static string targetPubKeyHex = "";
 
 int main(int argc, char* argv[]) {
 
@@ -298,7 +310,38 @@ int main(int argc, char* argv[]) {
     } else if(strcmp(argv[a],"-check") == 0) {
       checkFlag = true;
       a++;
-    } else if(a == argc - 1) {
+    }
+    else if (strcmp(argv[a], "--tame") == 0) {
+        CHECKARG("--tame", 1);
+        generateTameMode = true;
+        generateTameFile = string(argv[a]);
+        a++;
+        }
+    else if (strcmp(argv[a], "--wilds") == 0) {
+        CHECKARG("--wilds", 1);
+        string wildsArg = string(argv[a]);
+        size_t comma = wildsArg.find(',');
+        if (comma == string::npos) {
+            printf("--wilds requires two comma-separated values: offsetBits,step\n");
+            exit(-1);
+        }
+        string offsetPart = wildsArg.substr(0, comma);
+        string stepPart = wildsArg.substr(comma + 1);
+        wildsOnlyMode = true;
+        wildsOffsetBits = getInt("offsetBits", (char*)offsetPart.c_str());
+        int stepBits = getInt("wildsStepBits", (char*)stepPart.c_str());
+        // We will pass stepBits to Kangaroo later; you may need to store it temporarily.
+        // For simplicity, we'll use a global variable or add a new command-line variable.
+        // Below we set a global (or a member of Kangaroo) – see step 2.
+        wildsStepBits = stepBits;
+        a++;
+        }
+    else if (strcmp(argv[a], "-pubkey") == 0) {
+            CHECKARG("-pubkey", 1);
+            targetPubKeyHex = string(argv[a]);
+            a++;
+            }
+    else if (a == argc - 1) {
       configFile = string(argv[a]);
       a++;
     } else {
@@ -320,6 +363,20 @@ int main(int argc, char* argv[]) {
 
   Kangaroo *v = new Kangaroo(secp,dp,gpuEnable,workFile,iWorkFile,savePeriod,saveKangaroo,saveKangarooByServer,
                              maxStep,wtimeout,port,ntimeout,serverIP,outputFile,splitWorkFile);
+
+  if (wildsOnlyMode) {
+      if (targetPubKeyHex.empty() && configFile.empty()) {
+          printf("Wilds mode requires a target public key (-pubkey) or a config file.\n");
+          exit(-1);
+      }
+      v->SetWildsMode(wildsOffsetBits, wildsStepBits, targetPubKeyHex);
+
+  }
+
+  if (generateTameMode) {
+      v->SetGenerateTameMode(generateTameFile, savePeriod);
+  }
+
   if(checkFlag) {
     v->Check(gpuId,gridSize);  
     exit(0);

@@ -26,13 +26,13 @@
 
 // Number of random jumps
 // Max 512 for the GPU
-#define NB_JUMP 32
+#define NB_JUMP 256 //32
 
 // GPU group size
-#define GPU_GRP_SIZE 128
+#define GPU_GRP_SIZE 128 // 128
 
 // GPU number of run per kernel call
-#define NB_RUN 64
+#define NB_RUN 64 // 64
 
 // Kangaroo type
 #define TAME 0  // Tame kangaroo

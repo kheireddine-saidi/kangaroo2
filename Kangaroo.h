@@ -74,6 +74,7 @@ typedef struct {
   Int *px; // Kangaroo position
   Int *py; // Kangaroo position
   Int *distance; // Travelled distance
+  Int *startDistance; // Starting offset (wilds mode only)
 
 #ifdef USE_SYMMETRY
   uint64_t *symClass; // Last jump
@@ -131,6 +132,17 @@ public:
   Kangaroo(Secp256K1 *secp,int32_t initDPSize,bool useGpu,std::string &workFile,std::string &iWorkFile,
            uint32_t savePeriod,bool saveKangaroo,bool saveKangarooByServer,double maxStep,int wtimeout,int sport,int ntimeout,
            std::string serverIp,std::string outputFile,bool splitWorkfile);
+
+  ~Kangaroo();
+
+  void SetWildsMode(int offsetBits, int stepBits, const std::string& pubKeyHex = "");
+
+  void WriteWildsDP(Int* x, Int* dist, Int* startDist);
+  void PrintStatus();
+
+  void SetGenerateTameMode(const std::string& fileName, uint32_t savePeriod);
+  void PrintDPDebug(Int* x, Int* distance, uint32_t kType, int threadId, const char* mode);
+
   void Run(int nbThread,std::vector<int> gpuId,std::vector<int> gridSize);
   void RunServer();
   bool ParseConfigFile(std::string &fileName);
@@ -160,6 +172,31 @@ public:
   void RemoveConnectedKangaroo(uint64_t nb);
 
 private:
+
+    bool wildsOnlyMode;
+    int wildsOffsetBits;
+    std::string wildsOutputFile;
+    void GenerateWildDistance(Int& dist);
+    double lastStatusTime;
+//    double startTime;
+
+    bool _generateTameMode;
+    std::string _generateTameFile;
+    uint32_t _generateTameSavePeriod;
+
+    Int wildsNextStart; 
+    Int wildsStep;
+    double lastKernelMs;
+
+    int  wildsStepBits;        // raw stepBits passed to SetWildsMode (0 = subrange mode)
+    bool wildsSubRangeMode;    // true when wildsStepBits == 0
+    uint64_t wildsNbSubRanges; // number of subranges (== totalRW, rounded up to a power of two)
+    uint64_t wildsSubRangeIdx; // index of the next subrange to hand out (round-robin)
+    int  wildsSubRangeBits;    // bit-width of each subrange (wildsOffsetBits - log2(wildsNbSubRanges))
+
+    void NextWildsSubRangeStart(Int& start);
+
+
 
   bool IsDP(uint64_t x);
   void SetDP(int size);

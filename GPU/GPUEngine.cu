@@ -104,24 +104,33 @@ int _ConvertSMVer2Cores(int major,int minor) {
              // and m = SM minor version
     int Cores;
   } sSMtoCores;
-
   sSMtoCores nGpuArchCoresPerSM[] = {
-    { 0x20, 32 }, // Fermi Generation (SM 2.0) GF100 class
-    { 0x21, 48 }, // Fermi Generation (SM 2.1) GF10x class
-    { 0x30, 192 },
-    { 0x32, 192 },
-    { 0x35, 192 },
-    { 0x37, 192 },
-    { 0x50, 128 },
-    { 0x52, 128 },
-    { 0x53, 128 },
-    { 0x60,  64 },
-    { 0x61, 128 },
-    { 0x62, 128 },
-    { 0x70,  64 },
-    { 0x72,  64 },
-    { 0x75,  64 },
-    { -1, -1 } };
+  { 0x20,  32 }, // Fermi  GF100
+  { 0x21,  48 }, // Fermi  GF10x
+  { 0x30, 192 }, // Kepler GK10x
+  { 0x32, 192 }, // Kepler GK10x
+  { 0x35, 192 }, // Kepler GK11x
+  { 0x37, 192 }, // Kepler GK21x
+  { 0x50, 128 }, // Maxwell GM10x
+  { 0x52, 128 }, // Maxwell GM20x
+  { 0x53, 128 }, // Maxwell GM20x
+  { 0x60,  64 }, // Pascal  GP100
+  { 0x61, 128 }, // Pascal  GP10x  (GTX 10xx)
+  { 0x62, 128 }, // Pascal  GP10x  (Tegra)
+  { 0x70,  64 }, // Volta   GV100
+  { 0x72,  64 }, // Volta   AGX Xavier
+  { 0x75,  64 }, // Turing  TU1xx  (RTX 20xx)
+  { 0x80,  64 }, // Ampere  GA100
+  { 0x86, 128 }, // Ampere  GA10x  (RTX 30xx)
+  { 0x87, 128 }, // Ampere  GA10x  (Jetson Orin)
+  { 0x89, 128 }, // Ada     AD10x  (RTX 40xx)
+  { 0x90, 128 }, // Hopper  GH100
+  { 0x92, 128 }, // Hopper  GH200
+  { 0xa0, 128 }, // Blackwell GB100 (H100 successor)
+  { 0xa1, 128 }, // Blackwell GB10x
+  { -1,    -1 }
+  };
+
 
   int index = 0;
 
@@ -138,7 +147,10 @@ int _ConvertSMVer2Cores(int major,int minor) {
 }
 
 void GPUEngine::SetWildOffset(Int* offset) {
-  wildOffset.Set(offset);
+    if (offset != nullptr)
+        wildOffset.Set(offset);
+    else
+        wildOffset.SetInt32(0);   // neutral value
 }
 
 GPUEngine::GPUEngine(int nbThreadGroup,int nbThreadPerGroup,int gpuId,uint32_t maxFound) {
@@ -184,7 +196,7 @@ GPUEngine::GPUEngine(int nbThreadGroup,int nbThreadPerGroup,int gpuId,uint32_t m
   deviceName = std::string(tmp);
 
   // Prefer L1 (We do not use __shared__ at all)
-  err = cudaDeviceSetCacheConfig(cudaFuncCachePreferL1);
+  err = cudaDeviceSetCacheConfig(cudaFuncCachePreferEqual); // cudaFuncCachePreferL1 / cudaFuncCachePreferShared / cudaFuncCachePreferEqual
   if(err != cudaSuccess) {
     printf("GPUEngine: %s\n",cudaGetErrorString(err));
     return;
@@ -378,58 +390,59 @@ int GPUEngine::GetNbThread() {
   return nbThread;
 }
 
-void GPUEngine::SetKangaroos(Int *px,Int *py,Int *d) {
+void GPUEngine::SetKangaroos(Int* px, Int* py, Int* d) {
 
-  // Sets the kangaroos of each thread
-  int gSize = KSIZE * GPU_GRP_SIZE;
-  int strideSize = nbThreadPerGroup * KSIZE;
-  int nbBlock = nbThread / nbThreadPerGroup;
-  int blockSize = nbThreadPerGroup * gSize;
-  int idx = 0;
+    int gSize = KSIZE * GPU_GRP_SIZE;
+    int strideSize = nbThreadPerGroup * KSIZE;
+    int nbBlock = nbThread / nbThreadPerGroup;
+    int blockSize = nbThreadPerGroup * gSize;
+    int idx = 0;
 
-  for(int b = 0; b < nbBlock; b++) {
-    for(int g = 0; g < GPU_GRP_SIZE; g++) {
-      for(int t = 0; t < nbThreadPerGroup; t++) {
+    for (int b = 0; b < nbBlock; b++) {
+        for (int g = 0; g < GPU_GRP_SIZE; g++) {
+            for (int t = 0; t < nbThreadPerGroup; t++) {
 
-        // X
-        inputKangarooPinned[g * strideSize + t + 0 * nbThreadPerGroup] = px[idx].bits64[0];
-        inputKangarooPinned[g * strideSize + t + 1 * nbThreadPerGroup] = px[idx].bits64[1];
-        inputKangarooPinned[g * strideSize + t + 2 * nbThreadPerGroup] = px[idx].bits64[2];
-        inputKangarooPinned[g * strideSize + t + 3 * nbThreadPerGroup] = px[idx].bits64[3];
+                // X
+                inputKangarooPinned[g * strideSize + t + 0 * nbThreadPerGroup] = px[idx].bits64[0];
+                inputKangarooPinned[g * strideSize + t + 1 * nbThreadPerGroup] = px[idx].bits64[1];
+                inputKangarooPinned[g * strideSize + t + 2 * nbThreadPerGroup] = px[idx].bits64[2];
+                inputKangarooPinned[g * strideSize + t + 3 * nbThreadPerGroup] = px[idx].bits64[3];
 
-        // Y
-        inputKangarooPinned[g * strideSize + t + 4 * nbThreadPerGroup] = py[idx].bits64[0];
-        inputKangarooPinned[g * strideSize + t + 5 * nbThreadPerGroup] = py[idx].bits64[1];
-        inputKangarooPinned[g * strideSize + t + 6 * nbThreadPerGroup] = py[idx].bits64[2];
-        inputKangarooPinned[g * strideSize + t + 7 * nbThreadPerGroup] = py[idx].bits64[3];
+                // Y
+                inputKangarooPinned[g * strideSize + t + 4 * nbThreadPerGroup] = py[idx].bits64[0];
+                inputKangarooPinned[g * strideSize + t + 5 * nbThreadPerGroup] = py[idx].bits64[1];
+                inputKangarooPinned[g * strideSize + t + 6 * nbThreadPerGroup] = py[idx].bits64[2];
+                inputKangarooPinned[g * strideSize + t + 7 * nbThreadPerGroup] = py[idx].bits64[3];
 
-        // Distance
-        Int dOff;
-        dOff.Set(&d[idx]);
-        if(idx % 2 == WILD) dOff.ModAddK1order(&wildOffset);
-        inputKangarooPinned[g * strideSize + t + 8 * nbThreadPerGroup] = dOff.bits64[0];
-        inputKangarooPinned[g * strideSize + t + 9 * nbThreadPerGroup] = dOff.bits64[1];
+                // Distance
+                Int dOff;
+                dOff.Set(&d[idx]);
+                if (!wildsOnlyMode && idx % 2 == WILD) {
+                    dOff.ModAddK1order(&wildOffset);
+                }
+                inputKangarooPinned[g * strideSize + t + 8 * nbThreadPerGroup] = dOff.bits64[0];
+                inputKangarooPinned[g * strideSize + t + 9 * nbThreadPerGroup] = dOff.bits64[1];
 
 #ifdef USE_SYMMETRY
-        // Last jump
-        inputKangarooPinned[t + 10 * nbThreadPerGroup] = (uint64_t)NB_JUMP;
+                // Last jump (only used with symmetry)
+                if (wildsOnlyMode)
+                    inputKangarooPinned[t + 10 * nbThreadPerGroup] = (uint64_t)NB_JUMP;
+                else
+                    inputKangarooPinned[t + 10 * nbThreadPerGroup] = (uint64_t)NB_JUMP;
 #endif
 
-        idx++;
-      }
+                idx++;
+            }
+        }
 
+        uint32_t offset = b * blockSize;
+        cudaMemcpy(inputKangaroo + offset, inputKangarooPinned, kangarooSizePinned, cudaMemcpyHostToDevice);
     }
 
-    uint32_t offset = b * blockSize;
-    cudaMemcpy(inputKangaroo + offset,inputKangarooPinned,kangarooSizePinned,cudaMemcpyHostToDevice);
-
-  }
-
-  cudaError_t err = cudaGetLastError();
-  if(err != cudaSuccess) {
-    printf("GPUEngine: SetKangaroos: %s\n",cudaGetErrorString(err));
-  }
-
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        printf("GPUEngine: SetKangaroos: %s\n", cudaGetErrorString(err));
+    }
 }
 
 void GPUEngine::GetKangaroos(Int *px,Int *py,Int *d) {
@@ -490,51 +503,51 @@ void GPUEngine::GetKangaroos(Int *px,Int *py,Int *d) {
 
 }
 
-void GPUEngine::SetKangaroo(uint64_t kIdx,Int *px,Int *py,Int *d) {
+void GPUEngine::SetKangaroo(uint64_t kIdx, Int* px, Int* py, Int* d) {
 
-  int gSize = KSIZE * GPU_GRP_SIZE;
-  int strideSize = nbThreadPerGroup * KSIZE;
-  int blockSize = nbThreadPerGroup * gSize;
+    int gSize = KSIZE * GPU_GRP_SIZE;
+    int strideSize = nbThreadPerGroup * KSIZE;
+    int blockSize = nbThreadPerGroup * gSize;
 
-  uint64_t t = kIdx % nbThreadPerGroup;
-  uint64_t g = (kIdx / nbThreadPerGroup) % GPU_GRP_SIZE;
-  uint64_t b = kIdx / (nbThreadPerGroup*GPU_GRP_SIZE);
+    uint64_t t = kIdx % nbThreadPerGroup;
+    uint64_t g = (kIdx / nbThreadPerGroup) % GPU_GRP_SIZE;
+    uint64_t b = kIdx / (nbThreadPerGroup * GPU_GRP_SIZE);
 
-  // X
-  inputKangarooPinned[0] = px->bits64[0];
-  cudaMemcpy(inputKangaroo + (b * blockSize + g * strideSize + t + 0 * nbThreadPerGroup),inputKangarooPinned,8,cudaMemcpyHostToDevice);
-  inputKangarooPinned[0] = px->bits64[1];
-  cudaMemcpy(inputKangaroo + (b * blockSize + g * strideSize + t + 1 * nbThreadPerGroup),inputKangarooPinned,8,cudaMemcpyHostToDevice);
-  inputKangarooPinned[0] = px->bits64[2];
-  cudaMemcpy(inputKangaroo + (b * blockSize + g * strideSize + t + 2 * nbThreadPerGroup),inputKangarooPinned,8,cudaMemcpyHostToDevice);
-  inputKangarooPinned[0] = px->bits64[3];
-  cudaMemcpy(inputKangaroo + (b * blockSize + g * strideSize + t + 3 * nbThreadPerGroup),inputKangarooPinned,8,cudaMemcpyHostToDevice);
+    // X
+    inputKangarooPinned[0] = px->bits64[0];
+    cudaMemcpy(inputKangaroo + (b * blockSize + g * strideSize + t + 0 * nbThreadPerGroup), inputKangarooPinned, 8, cudaMemcpyHostToDevice);
+    inputKangarooPinned[0] = px->bits64[1];
+    cudaMemcpy(inputKangaroo + (b * blockSize + g * strideSize + t + 1 * nbThreadPerGroup), inputKangarooPinned, 8, cudaMemcpyHostToDevice);
+    inputKangarooPinned[0] = px->bits64[2];
+    cudaMemcpy(inputKangaroo + (b * blockSize + g * strideSize + t + 2 * nbThreadPerGroup), inputKangarooPinned, 8, cudaMemcpyHostToDevice);
+    inputKangarooPinned[0] = px->bits64[3];
+    cudaMemcpy(inputKangaroo + (b * blockSize + g * strideSize + t + 3 * nbThreadPerGroup), inputKangarooPinned, 8, cudaMemcpyHostToDevice);
 
-  // Y
-  inputKangarooPinned[0] = py->bits64[0];
-  cudaMemcpy(inputKangaroo + (b * blockSize + g * strideSize + t + 4 * nbThreadPerGroup),inputKangarooPinned,8,cudaMemcpyHostToDevice);
-  inputKangarooPinned[0] = py->bits64[1];
-  cudaMemcpy(inputKangaroo + (b * blockSize + g * strideSize + t + 5 * nbThreadPerGroup),inputKangarooPinned,8,cudaMemcpyHostToDevice);
-  inputKangarooPinned[0] = py->bits64[2];
-  cudaMemcpy(inputKangaroo + (b * blockSize + g * strideSize + t + 6 * nbThreadPerGroup),inputKangarooPinned,8,cudaMemcpyHostToDevice);
-  inputKangarooPinned[0] = py->bits64[3];
-  cudaMemcpy(inputKangaroo + (b * blockSize + g * strideSize + t + 7 * nbThreadPerGroup),inputKangarooPinned,8,cudaMemcpyHostToDevice);
+    // Y
+    inputKangarooPinned[0] = py->bits64[0];
+    cudaMemcpy(inputKangaroo + (b * blockSize + g * strideSize + t + 4 * nbThreadPerGroup), inputKangarooPinned, 8, cudaMemcpyHostToDevice);
+    inputKangarooPinned[0] = py->bits64[1];
+    cudaMemcpy(inputKangaroo + (b * blockSize + g * strideSize + t + 5 * nbThreadPerGroup), inputKangarooPinned, 8, cudaMemcpyHostToDevice);
+    inputKangarooPinned[0] = py->bits64[2];
+    cudaMemcpy(inputKangaroo + (b * blockSize + g * strideSize + t + 6 * nbThreadPerGroup), inputKangarooPinned, 8, cudaMemcpyHostToDevice);
+    inputKangarooPinned[0] = py->bits64[3];
+    cudaMemcpy(inputKangaroo + (b * blockSize + g * strideSize + t + 7 * nbThreadPerGroup), inputKangarooPinned, 8, cudaMemcpyHostToDevice);
 
-  // D
-  Int dOff;
-  dOff.Set(d);
-  if(kIdx % 2 == WILD) dOff.ModAddK1order(&wildOffset);
-  inputKangarooPinned[0] = dOff.bits64[0];
-  cudaMemcpy(inputKangaroo + (b * blockSize + g * strideSize + t + 8 * nbThreadPerGroup),inputKangarooPinned,8,cudaMemcpyHostToDevice);
-  inputKangarooPinned[0] = dOff.bits64[1];
-  cudaMemcpy(inputKangaroo + (b * blockSize + g * strideSize + t + 9 * nbThreadPerGroup),inputKangarooPinned,8,cudaMemcpyHostToDevice);
+    // D
+    Int dOff;
+    dOff.Set(d);
+    if (!wildsOnlyMode && kIdx % 2 == WILD) {
+        dOff.ModAddK1order(&wildOffset);
+    }
+    inputKangarooPinned[0] = dOff.bits64[0];
+    cudaMemcpy(inputKangaroo + (b * blockSize + g * strideSize + t + 8 * nbThreadPerGroup), inputKangarooPinned, 8, cudaMemcpyHostToDevice);
+    inputKangarooPinned[0] = dOff.bits64[1];
+    cudaMemcpy(inputKangaroo + (b * blockSize + g * strideSize + t + 9 * nbThreadPerGroup), inputKangarooPinned, 8, cudaMemcpyHostToDevice);
 
 #ifdef USE_SYMMETRY
-  // Last jump
-  inputKangarooPinned[0] = (uint64_t)NB_JUMP;
-  cudaMemcpy(inputKangaroo + (b * blockSize + g * strideSize + t + 10 * nbThreadPerGroup),inputKangarooPinned,8,cudaMemcpyHostToDevice);
+    inputKangarooPinned[0] = (uint64_t)NB_JUMP;
+    cudaMemcpy(inputKangaroo + (b * blockSize + g * strideSize + t + 10 * nbThreadPerGroup), inputKangarooPinned, 8, cudaMemcpyHostToDevice);
 #endif
-
 }
 
 bool GPUEngine::callKernel() {
@@ -676,4 +689,8 @@ bool GPUEngine::Launch(std::vector<ITEM> &hashFound,bool spinWait) {
 
   return callKernel();
 
+}
+
+void GPUEngine::SetWildsMode(bool enable) {
+    wildsOnlyMode = enable;
 }

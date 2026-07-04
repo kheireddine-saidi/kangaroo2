@@ -62,6 +62,8 @@ public:
   static void PrintCudaInfo();
   static bool GetGridSize(int gpuId,int *x,int *y);
 
+  void SetWildsMode(bool enable);
+
 private:
 
   Int wildOffset;
@@ -80,6 +82,9 @@ private:
   uint32_t kangarooSizePinned;
   uint32_t jumpSize;
   uint64_t dpMask;
+
+  bool wildsOnlyMode;
+
 
 };
 
